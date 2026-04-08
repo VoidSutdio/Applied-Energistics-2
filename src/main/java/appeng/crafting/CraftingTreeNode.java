@@ -110,16 +110,17 @@ public class CraftingTreeNode {
             boolean damageableItem = this.what.getItem().isDamageable() || Platform.isGTDamageableItem(this.what.getItem());
 
             if (this.parent.details.canSubstitute()) {
-                for (IAEItemStack subs : this.parent.details.getSubstituteInputs(this.slot)) {
-                    if (damageableItem) {
-                        Iterator<IAEItemStack> it = new MeaningfulItemIterator<>(inventoryList.findFuzzy(this.what, FuzzyMode.IGNORE_ALL));
-                        while (it.hasNext()) {
-                            IAEItemStack i = it.next();
-                            if (i.getStackSize() > 0) {
-                                itemList.add(i);
-                            }
+                if (damageableItem) {
+                    Iterator<IAEItemStack> it = new MeaningfulItemIterator<>(inventoryList.findFuzzy(this.what, FuzzyMode.IGNORE_ALL));
+                    while (it.hasNext()) {
+                        IAEItemStack i = it.next();
+                        if (i.getStackSize() > 0) {
+                            itemList.add(i);
                         }
                     }
+                }
+                for (IAEItemStack subs : this.parent.details.getSubstituteInputs(this.slot)) {
+                    if (subs == null) continue;
                     subs = inventoryList.findPrecise(subs);
                     if (subs != null && subs.getStackSize() > 0) {
                         itemList.add(subs);
