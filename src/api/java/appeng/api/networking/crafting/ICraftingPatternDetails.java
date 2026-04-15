@@ -32,7 +32,9 @@ import appeng.api.implementations.ICraftingPatternItem;
 import appeng.api.storage.data.IAEItemStack;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 
 /**
@@ -98,6 +100,11 @@ public interface ICraftingPatternDetails
 	default List<IAEItemStack> getSubstituteInputs( int slot )
 	{
 		return Collections.emptyList();
+	}
+
+	default Set<IAEItemStack> getSubstituteInputsSet( int slot )
+	{
+		return new HashSet<>( getSubstituteInputs( slot ) );
 	}
 
 	/**

@@ -65,6 +65,7 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
     private final IAEItemStack[] inputs;
     private final IAEItemStack[] outputs;
     private final List<IAEItemStack>[] substituteInputs;
+    private final Set<IAEItemStack>[] substituteInputSets;
     private final boolean isCrafting;
     private final boolean canSubstitute;
     private final Set<TestLookup> failCache = new ObjectOpenHashSet<>();
@@ -142,6 +143,7 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
         this.inputs = in.toArray(new IAEItemStack[isCrafting ? CRAFTING_INPUT_LIMIT : PROCESSING_INPUT_LIMIT]);
         this.outputs = out.toArray(new IAEItemStack[outputLength]);
         this.substituteInputs = new List[CRAFTING_INPUT_LIMIT];
+        this.substituteInputSets = new Set[CRAFTING_INPUT_LIMIT];
 
         final Map<IAEItemStack, IAEItemStack> tmpOutputs = new HashMap<>();
 
@@ -295,15 +297,30 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
             return this.substituteInputs[slot];
         } else {
             ItemStack[] matchingStacks = this.getRecipeIngredient(slot).getMatchingStacks();
-            IAEItemStack[] matchingAEStacks = new IAEItemStack[matchingStacks.length + 1];
-            matchingAEStacks[0] = this.inputs[slot];
+            List<IAEItemStack> result = new ObjectArrayList<>(matchingStacks.length + 1);
+            result.add(this.inputs[slot]);
 
-            for(int i = 1; i < matchingStacks.length; ++i) {
-                matchingAEStacks[i] = AEItemStack.fromItemStack(matchingStacks[i]);
+            for (ItemStack matchingStack : matchingStacks) {
+                IAEItemStack aeStack = AEItemStack.fromItemStack(matchingStack);
+                if (aeStack != null && !aeStack.equals(this.inputs[slot])) {
+                    result.add(aeStack);
+                }
             }
 
-            List<IAEItemStack> itemList = new ObjectArrayList<>(matchingAEStacks);
-            return this.substituteInputs[slot] = itemList;
+            return this.substituteInputs[slot] = result;
+        }
+    }
+
+    @Override
+    public Set<IAEItemStack> getSubstituteInputsSet(int slot) {
+        if (this.inputs[slot] == null) {
+            return Collections.emptySet();
+        } else if (slot >= this.substituteInputSets.length) {
+            return Collections.emptySet();
+        } else if (this.substituteInputSets[slot] != null) {
+            return this.substituteInputSets[slot];
+        } else {
+            return this.substituteInputSets[slot] = new ObjectOpenHashSet<>(getSubstituteInputs(slot));
         }
     }
 

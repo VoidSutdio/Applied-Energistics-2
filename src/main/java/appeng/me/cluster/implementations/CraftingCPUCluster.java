@@ -453,42 +453,51 @@ public final class CraftingCPUCluster implements IAECluster, ICraftingCPU {
                 }
             }
         } else if (details.canSubstitute()) {
-            // When substitutions are allowed, we have to keep track of which items we've reserved
             IAEItemStack[] inputs = details.getInputs();
             Map<IAEItemStack, Integer> consumedCount = new HashMap<>();
             for (int i = 0; i < inputs.length; i++) {
+                if (inputs[i] == null) continue;
                 List<IAEItemStack> substitutes = details.getSubstituteInputs(i);
-                if (substitutes.isEmpty()) {
-                    continue;
-                }
+                if (substitutes.isEmpty()) continue;
 
                 boolean found = false;
-                for (IAEItemStack substitute : substitutes) {
-                    for (IAEItemStack fuzz : this.inventory.getItemList().findFuzzy(substitute, FuzzyMode.IGNORE_ALL)) {
-                        int alreadyConsumed = consumedCount.getOrDefault(fuzz, 0);
-                        if (fuzz.getStackSize() - alreadyConsumed <= 0) {
-                            continue; // Already fully consumed by a previous slot of this recipe
-                        }
+                boolean isDamageable = inputs[i].getItem().isDamageable() || Platform.isGTDamageableItem(inputs[i].getItem());
 
-                        fuzz = fuzz.copy();
-                        fuzz.setStackSize(1); // We're iterating over non condensed inputs which means there's 1 of each needed
-                        final IAEItemStack ais = this.inventory.extractItems(fuzz, Actionable.SIMULATE, this.machineSrc);
+                if (isDamageable) {
+                    for (IAEItemStack substitute : substitutes) {
+                        if (substitute == null) continue;
+                        for (IAEItemStack fuzz : this.inventory.getItemList().findFuzzy(substitute, FuzzyMode.IGNORE_ALL)) {
+                            int alreadyConsumed = consumedCount.getOrDefault(fuzz, 0);
+                            if (fuzz.getStackSize() - alreadyConsumed <= 0) continue;
 
-                        if (ais != null && ais.getStackSize() > 0) {
-                            // Mark 1 of the stack as consumed
-                            consumedCount.merge(fuzz, 1, Integer::sum);
-                            found = true;
-                            break;
+                            fuzz = fuzz.copy();
+                            fuzz.setStackSize(1);
+                            final IAEItemStack ais = this.inventory.extractItems(fuzz, Actionable.SIMULATE, this.machineSrc);
+
+                            if (ais != null && ais.getStackSize() > 0) {
+                                consumedCount.merge(fuzz, 1, Integer::sum);
+                                found = true;
+                                break;
+                            }
                         }
+                        if (found) break;
                     }
-                    if (found) {
-                        break;
+                } else {
+                    Set<IAEItemStack> subsSet = details.getSubstituteInputsSet(i);
+                    for (IAEItemStack invItem : this.inventory.getItemList()) {
+                        if (invItem.getStackSize() <= 0) continue;
+                        if (subsSet.contains(invItem)) {
+                            int alreadyConsumed = consumedCount.getOrDefault(invItem, 0);
+                            if (invItem.getStackSize() - alreadyConsumed > 0) {
+                                consumedCount.merge(invItem, 1, Integer::sum);
+                                found = true;
+                                break;
+                            }
+                        }
                     }
                 }
 
-                if (!found) {
-                    return false;
-                }
+                if (!found) return false;
             }
 
         } else {
@@ -674,11 +683,22 @@ public final class CraftingCPUCluster implements IAECluster, ICraftingCPU {
                             final Collection<IAEItemStack> itemList;
 
                             if (details.canSubstitute()) {
-                                final List<IAEItemStack> substitutes = details.getSubstituteInputs(x);
-                                itemList = new ArrayList<>(substitutes.size());
+                                itemList = new ArrayList<>();
+                                boolean isDamageable = input[x].getItem().isDamageable() || Platform.isGTDamageableItem(input[x].getItem());
 
-                                for (IAEItemStack stack : substitutes) {
-                                    itemList.addAll(this.inventory.getItemList().findFuzzy(stack, FuzzyMode.IGNORE_ALL));
+                                if (isDamageable) {
+                                    for (IAEItemStack stack : details.getSubstituteInputs(x)) {
+                                        if (stack != null) {
+                                            itemList.addAll(this.inventory.getItemList().findFuzzy(stack, FuzzyMode.IGNORE_ALL));
+                                        }
+                                    }
+                                } else {
+                                    Set<IAEItemStack> subsSet = details.getSubstituteInputsSet(x);
+                                    for (IAEItemStack invItem : this.inventory.getItemList()) {
+                                        if (invItem.getStackSize() > 0 && subsSet.contains(invItem)) {
+                                            itemList.add(invItem);
+                                        }
+                                    }
                                 }
                             } else {
                                 itemList = new ArrayList<>(1);
