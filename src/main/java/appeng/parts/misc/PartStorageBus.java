@@ -24,6 +24,7 @@ import appeng.api.config.*;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
+import appeng.api.networking.IMachineSet;
 import appeng.api.networking.events.MENetworkCellArrayUpdate;
 import appeng.api.networking.events.MENetworkChannelsChanged;
 import appeng.api.networking.events.MENetworkEventSubscribe;
@@ -46,7 +47,6 @@ import appeng.api.util.AECableType;
 import appeng.api.util.AEPartLocation;
 import appeng.api.util.IConfigManager;
 import appeng.capabilities.Capabilities;
-import appeng.core.AELog;
 import appeng.core.AppEng;
 import appeng.core.settings.TickRates;
 import appeng.core.sync.GuiBridge;
@@ -420,6 +420,12 @@ public class PartStorageBus extends PartUpgradeable implements IGridTickable, IC
                 return null;
             }
 
+            // Break bidirectional StorageBus<->StorageBus loops between two different grids.
+            // These loops can double-count contents (A sees B and B sees A).
+            if (this.shouldBlockLoopLink()) {
+                return null;
+            }
+
             IStorageMonitorable inventory = accessor.getInventory(this.mySrc);
             if (inventory != null) {
                 return inventory.getInventory(AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class));
@@ -458,40 +464,188 @@ public class PartStorageBus extends PartUpgradeable implements IGridTickable, IC
             if (currentGrid == null) {
                 return false;
             }
-
-            if (targetTile instanceof TileCableBus cableBus) {
-                IPart attachedPart = cableBus.getPart(this.getSide().getOpposite());
-
-                if (attachedPart instanceof IGridHost) {
-                    IGridNode partNode = findGridNode((IGridHost) attachedPart);
-                    if (partNode != null) {
-                        IGrid partGrid = partNode.getGrid();
-                        if (partGrid != null && partGrid == currentGrid) {
-                            return true;
-                        }
-                    }
-                }
-
-                IGridNode busNode = findGridNode(cableBus);
-                if (busNode != null) {
-                    IGrid busGrid = busNode.getGrid();
-                    return busGrid != null && busGrid == currentGrid;
-                }
-
-                return false;
-            }
-
-            if (targetTile instanceof IGridHost) {
-                IGridNode targetNode = findGridNode((IGridHost) targetTile);
-                if (targetNode != null) {
-                    IGrid targetGrid = targetNode.getGrid();
-                    return targetGrid != null && targetGrid == currentGrid;
-                }
-            }
+            return this.isTileConnectedToGrid(targetTile, currentGrid);
         } catch (Exception ignored) {
         }
 
         return false;
+    }
+
+    private boolean isTileConnectedToGrid(final TileEntity targetTile, final IGrid expectedGrid) {
+        final IGrid targetGrid = this.getGridForTargetTile(targetTile);
+        return targetGrid != null && targetGrid == expectedGrid;
+    }
+
+    private IGrid getGridForTargetTile(final TileEntity targetTile) {
+        if (targetTile == null) {
+            return null;
+        }
+
+        if (targetTile instanceof TileCableBus cableBus) {
+            IPart attachedPart = cableBus.getPart(this.getSide().getOpposite());
+            if (attachedPart instanceof IGridHost) {
+                IGridNode partNode = findGridNode((IGridHost) attachedPart);
+                if (partNode != null) {
+                    IGrid partGrid = partNode.getGrid();
+                    if (partGrid != null) {
+                        return partGrid;
+                    }
+                }
+            }
+
+            IGridNode busNode = findGridNode(cableBus);
+            return busNode == null ? null : busNode.getGrid();
+        }
+
+        if (targetTile instanceof IGridHost) {
+            IGridNode targetNode = findGridNode((IGridHost) targetTile);
+            return targetNode == null ? null : targetNode.getGrid();
+        }
+
+        return null;
+    }
+
+    private boolean shouldBlockLoopLink() {
+        try {
+            final IGrid currentGrid = this.getProxy().getGrid();
+            final TileEntity targetTile = this.getTargetTile();
+            final IGrid targetGrid = this.getGridForTargetTile(targetTile);
+            if (currentGrid == null || targetGrid == null || currentGrid == targetGrid) {
+                return false;
+            }
+
+            final PartStorageBus oppositeBus = this.findReciprocalStorageBus(targetGrid);
+            if (oppositeBus == null || oppositeBus == this) {
+                return false;
+            }
+
+            final LinkKey ownKey = this.getStableLinkKey();
+            final LinkKey otherKey = oppositeBus.getStableLinkKey();
+            if (ownKey == null || otherKey == null) {
+                return false;
+            }
+
+            return ownKey.compareTo(otherKey) > 0;
+        } catch (Exception ignored) {
+        }
+
+        return false;
+    }
+
+    private PartStorageBus findReciprocalStorageBus(final IGrid targetGrid) {
+        final PartStorageBus directOppositeBus = this.findDirectOppositeStorageBus();
+        if (directOppositeBus != null && directOppositeBus != this && this.formsReciprocalPairWith(directOppositeBus)) {
+            return directOppositeBus;
+        }
+
+        final IMachineSet machines = targetGrid.getMachines(PartStorageBus.class);
+        for (final IGridNode node : machines) {
+            final IGridHost machine = node.getMachine();
+            if (!(machine instanceof PartStorageBus otherBus) || otherBus == this) {
+                continue;
+            }
+
+            if (this.formsReciprocalPairWith(otherBus)) {
+                return otherBus;
+            }
+        }
+
+        return null;
+    }
+
+    private PartStorageBus findDirectOppositeStorageBus() {
+        if (this.getHost() == null || this.getHost().getTile() == null) {
+            return null;
+        }
+
+        final TileEntity self = this.getHost().getTile();
+        if (self.getWorld() == null) {
+            return null;
+        }
+
+        final BlockPos targetPos = self.getPos().offset(this.getSide().getFacing());
+        final TileEntity target = self.getWorld().getTileEntity(targetPos);
+        if (!(target instanceof TileCableBus cableBus)) {
+            return null;
+        }
+
+        final IPart oppositePart = cableBus.getPart(this.getSide().getOpposite());
+        if (oppositePart instanceof PartStorageBus) {
+            return (PartStorageBus) oppositePart;
+        }
+
+        return null;
+    }
+
+    private LinkKey getStableLinkKey() {
+        if (this.getHost() == null || this.getHost().getTile() == null) {
+            return null;
+        }
+
+        final TileEntity self = this.getHost().getTile();
+        if (self.getWorld() == null) {
+            return null;
+        }
+
+        final int dim = self.getWorld().provider.getDimension();
+        final BlockPos selfPos = self.getPos();
+        final BlockPos targetPos = selfPos.offset(this.getSide().getFacing());
+
+        return new LinkKey(dim, selfPos.toLong(), targetPos.toLong());
+    }
+
+    private boolean formsReciprocalPairWith(final PartStorageBus otherBus) {
+        if (otherBus == null || otherBus == this) {
+            return false;
+        }
+
+        final LinkKey ownKey = this.getStableLinkKey();
+        final LinkKey otherKey = otherBus.getStableLinkKey();
+        if (ownKey == null || otherKey == null) {
+            return false;
+        }
+
+        return ownKey.dimension == otherKey.dimension
+                && ownKey.selfPos == otherKey.targetPos
+                && ownKey.targetPos == otherKey.selfPos;
+    }
+
+    private TileEntity getTargetTile() {
+        if (this.getHost() == null || this.getHost().getTile() == null) {
+            return null;
+        }
+
+        final TileEntity self = this.getHost().getTile();
+
+        final BlockPos targetPos = self.getPos().offset(this.getSide().getFacing());
+        return self.getWorld().getTileEntity(targetPos);
+    }
+
+    private static final class LinkKey implements Comparable<LinkKey> {
+        private final int dimension;
+        private final long selfPos;
+        private final long targetPos;
+
+        private LinkKey(final int dimension, final long selfPos, final long targetPos) {
+            this.dimension = dimension;
+            this.selfPos = selfPos;
+            this.targetPos = targetPos;
+        }
+
+        @Override
+        public int compareTo(final LinkKey other) {
+            final int byDimension = Integer.compare(this.dimension, other.dimension);
+            if (byDimension != 0) {
+                return byDimension;
+            }
+
+            final int bySelfPos = Long.compare(this.selfPos, other.selfPos);
+            if (bySelfPos != 0) {
+                return bySelfPos;
+            }
+
+            return Long.compare(this.targetPos, other.targetPos);
+        }
     }
 
     private IGridNode findGridNode(IGridHost host) {
