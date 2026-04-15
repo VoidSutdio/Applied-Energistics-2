@@ -62,6 +62,9 @@ public final class ItemList implements IItemList<IAEItemStack> {
 
     @Override
     public boolean isEmpty() {
+        if (this.records.isEmpty()) {
+            return true;
+        }
         return !this.iterator().hasNext();
     }
 
@@ -120,7 +123,11 @@ public final class ItemList implements IItemList<IAEItemStack> {
 
     @Override
     public int size() {
-        return records.values().stream().mapToInt(ItemVariantList::size).sum();
+        int total = 0;
+        for (final ItemVariantList record : this.records.values()) {
+            total += record.size();
+        }
+        return total;
     }
 
     @Nonnull

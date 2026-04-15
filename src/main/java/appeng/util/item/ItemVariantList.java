@@ -74,9 +74,11 @@ abstract class ItemVariantList {
     }
 
     public int size() {
-        return (int) getRecords().values().stream()
-                .filter(IAEItemStack::isMeaningful)
-                .count();
+        int size = 0;
+        for (IAEItemStack v : getRecords().values()) {
+            if (v.isMeaningful()) size++;
+        }
+        return size;
     }
 
     public Iterator<IAEItemStack> iterator() {
