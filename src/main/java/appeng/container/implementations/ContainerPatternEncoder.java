@@ -43,13 +43,19 @@ import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.nbt.NBTBase;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraft.nbt.NBTTagString;
 import net.minecraft.world.World;
+import net.minecraftforge.oredict.OreDictionary;
 import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.items.wrapper.PlayerInvWrapper;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static appeng.helpers.ItemStackHelper.stackWriteToNBT;
 
@@ -74,6 +80,7 @@ public abstract class ContainerPatternEncoder extends ContainerMEMonitorable imp
     public boolean craftingMode = true;
     @GuiSync(96)
     public boolean substitute = false;
+    protected final Map<Integer, List<String>> processingSubstituteOreNames = new HashMap<>();
 
     protected ContainerPatternEncoder(InventoryPlayer ip, ITerminalHost monitorable, boolean bindInventory) {
         super(ip, monitorable, bindInventory);
@@ -136,6 +143,7 @@ public abstract class ContainerPatternEncoder extends ContainerMEMonitorable imp
     @Override
     public void onChangeInventory(IItemHandler inv, int slot, InvOperation mc, ItemStack removedStack, ItemStack newStack) {
         if (inv == this.crafting) {
+            this.clearProcessingSubstituteOptions(slot);
             this.fixCraftingRecipes();
         }
     }
@@ -257,6 +265,7 @@ public abstract class ContainerPatternEncoder extends ContainerMEMonitorable imp
 
         encodedValue.setTag("in", tagIn);
         encodedValue.setTag("out", tagOut);
+        this.writeProcessingSubstituteOptions(encodedValue);
         encodedValue.setBoolean("crafting", this.isCraftingMode());
         encodedValue.setBoolean("substitute", this.isSubstitute());
         encodedValue.setString("encoderId", getInventoryPlayer().player.getGameProfile().getId().toString());
@@ -527,6 +536,7 @@ public abstract class ContainerPatternEncoder extends ContainerMEMonitorable imp
             }
         }
         if (craftingMode) {
+            this.processingSubstituteOreNames.clear();
             this.fixCraftingRecipes();
         }
     }
@@ -627,6 +637,129 @@ public abstract class ContainerPatternEncoder extends ContainerMEMonitorable imp
         return c;
     }
 
+    public void setProcessingSubstituteOptions(int slot, ItemStack[] options) {
+        if (slot < 0) {
+            return;
+        }
+
+        if (options == null || options.length == 0) {
+            this.processingSubstituteOreNames.remove(slot);
+            return;
+        }
+
+        final List<ItemStack> normalizedOptions = new ArrayList<>(options.length);
+        for (ItemStack option : options) {
+            if (option != null && !option.isEmpty()) {
+                ItemStack copy = option.copy();
+                copy.setCount(1);
+                boolean duplicate = false;
+                for (ItemStack existing : normalizedOptions) {
+                    if (ItemStack.areItemsEqual(existing, copy) && ItemStack.areItemStackTagsEqual(existing, copy)) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (!duplicate) {
+                    normalizedOptions.add(copy);
+                }
+            }
+        }
+
+        if (normalizedOptions.size() < 2) {
+            // Single-choice ingredients should stay exact, just like in crafting mode.
+            this.processingSubstituteOreNames.remove(slot);
+            return;
+        }
+
+        Set<Integer> commonOreIds = null;
+        for (ItemStack option : normalizedOptions) {
+            final int[] oreIds = OreDictionary.getOreIDs(option);
+            if (oreIds.length == 0) {
+                this.processingSubstituteOreNames.remove(slot);
+                return;
+            }
+
+            final Set<Integer> optionOreIds = new LinkedHashSet<>(oreIds.length);
+            for (int oreId : oreIds) {
+                optionOreIds.add(oreId);
+            }
+
+            if (commonOreIds == null) {
+                commonOreIds = optionOreIds;
+            } else {
+                commonOreIds.retainAll(optionOreIds);
+            }
+
+            if (commonOreIds.isEmpty()) {
+                this.processingSubstituteOreNames.remove(slot);
+                return;
+            }
+        }
+
+        if (commonOreIds == null || commonOreIds.isEmpty()) {
+            this.processingSubstituteOreNames.remove(slot);
+            return;
+        }
+
+        final List<String> oreNames = new ArrayList<>(commonOreIds.size());
+        for (Integer oreId : commonOreIds) {
+            final String oreName = OreDictionary.getOreName(oreId);
+            if (oreName != null && !oreName.isEmpty()) {
+                oreNames.add(oreName);
+            }
+        }
+
+        if (oreNames.isEmpty()) {
+            this.processingSubstituteOreNames.remove(slot);
+        } else {
+            this.processingSubstituteOreNames.put(slot, oreNames);
+        }
+    }
+
+    public void clearProcessingSubstituteOptions(int slot) {
+        this.processingSubstituteOreNames.remove(slot);
+    }
+
+    private void writeProcessingSubstituteOptions(NBTTagCompound encodedValue) {
+        if (this.isCraftingMode() || !this.isSubstitute() || this.processingSubstituteOreNames.isEmpty()) {
+            encodedValue.removeTag("processingSubstitute");
+            return;
+        }
+
+        final NBTTagList substituteList = new NBTTagList();
+        for (Map.Entry<Integer, List<String>> entry : this.processingSubstituteOreNames.entrySet()) {
+            final int slot = entry.getKey();
+            if (slot < 0 || slot >= this.craftingSlots.length) {
+                continue;
+            }
+            if (this.craftingSlots[slot].getStack().isEmpty()) {
+                continue;
+            }
+
+            final NBTTagList oreNamesList = new NBTTagList();
+            for (String oreName : entry.getValue()) {
+                if (oreName == null || oreName.isEmpty()) {
+                    continue;
+                }
+                oreNamesList.appendTag(new NBTTagString(oreName));
+            }
+            if (oreNamesList.tagCount() == 0) {
+                continue;
+            }
+
+            final NBTTagCompound slotTag = new NBTTagCompound();
+            slotTag.setInteger("slot", slot);
+            slotTag.setTag("oreNames", oreNamesList);
+            substituteList.appendTag(slotTag);
+        }
+
+        if (substituteList.tagCount() > 0) {
+            encodedValue.setTag("processingSubstitute", substituteList);
+        } else {
+            encodedValue.removeTag("processingSubstitute");
+        }
+    }
+
     public void clear() {
         for (final Slot s : this.craftingSlots) {
             s.putStack(ItemStack.EMPTY);
@@ -635,6 +768,7 @@ public abstract class ContainerPatternEncoder extends ContainerMEMonitorable imp
         for (final Slot s : this.outputSlots) {
             s.putStack(ItemStack.EMPTY);
         }
+        this.processingSubstituteOreNames.clear();
 
         this.detectAndSendChanges();
         this.getAndUpdateOutput();

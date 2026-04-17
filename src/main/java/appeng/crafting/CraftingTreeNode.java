@@ -104,77 +104,72 @@ public class CraftingTreeNode {
 
         this.what.setStackSize(l);
 
-        if (this.getSlot() >= 0 && this.parent != null && this.parent.details.isCraftable()) {
+        if (this.getSlot() >= 0 && this.parent != null && this.parent.details.canSubstitute()) {
             LinkedList<IAEItemStack> itemList = new LinkedList<>();
 
             boolean damageableItem = this.what.getItem().isDamageable() || Platform.isGTDamageableItem(this.what.getItem());
 
-            if (this.parent.details.canSubstitute()) {
-                if (damageableItem) {
-                    Iterator<IAEItemStack> it = new MeaningfulItemIterator<>(inventoryList.findFuzzy(this.what, FuzzyMode.IGNORE_ALL));
-                    while (it.hasNext()) {
-                        IAEItemStack i = it.next();
-                        if (i.getStackSize() > 0) {
-                            itemList.add(i);
-                        }
+            if (damageableItem) {
+                Iterator<IAEItemStack> it = new MeaningfulItemIterator<>(inventoryList.findFuzzy(this.what, FuzzyMode.IGNORE_ALL));
+                while (it.hasNext()) {
+                    IAEItemStack i = it.next();
+                    if (i.getStackSize() > 0) {
+                        itemList.add(i);
                     }
+                }
+            }
+
+            for (IAEItemStack invItem : inventoryList) {
+                if (invItem == null || invItem.getStackSize() <= 0) {
+                    continue;
                 }
                 for (IAEItemStack subs : this.parent.details.getSubstituteInputs(this.slot)) {
                     if (subs == null) continue;
-                    subs = inventoryList.findPrecise(subs);
-                    if (subs != null && subs.getStackSize() > 0) {
-                        itemList.add(subs);
-                    }
-                }
-            } else {
-                if (damageableItem) {
-                    Iterator<IAEItemStack> it = new MeaningfulItemIterator<>(inventoryList.findFuzzy(this.what, FuzzyMode.IGNORE_ALL));
-                    while (it.hasNext()) {
-                        IAEItemStack i = it.next();
-                        if (i.getStackSize() > 0) {
-                            itemList.add(i);
-                        }
-                    }
-                } else {
-                    final IAEItemStack item = inventoryList.findPrecise(this.what);
-                    if (item != null && item.getStackSize() > 0) {
-                        itemList.add(item);
+                    if (subs.isSameType(invItem) || (!this.parent.details.isCraftable() && subs.sameOre(invItem))) {
+                        itemList.add(invItem);
+                        break;
                     }
                 }
             }
 
             for (IAEItemStack fuzz : itemList) {
-                if (this.parent.details.isValidItemForSlot(this.getSlot(), fuzz.getDefinition(), this.world)) {
-                    fuzz = fuzz.copy();
-                    fuzz.setStackSize(l);
+                boolean slotValid = true;
+                if (this.parent.details.isCraftable()) {
+                    slotValid = this.parent.details.isValidItemForSlot(this.getSlot(), fuzz.getDefinition(), this.world);
+                }
+                if (!slotValid) {
+                    continue;
+                }
 
-                    final IAEItemStack available = inv.extractItems(fuzz, Actionable.MODULATE, src);
+                fuzz = fuzz.copy();
+                fuzz.setStackSize(l);
 
-                    if (available != null) {
-                        if (available.getItem().hasContainerItem(available.getDefinition())) {
-                            final ItemStack is2 = Platform.getContainerItem(available.createItemStack());
-                            final IAEItemStack o = AEItemStack.fromItemStack(is2);
+                final IAEItemStack available = inv.extractItems(fuzz, Actionable.MODULATE, src);
 
-                            if (o != null) {
-                                this.parent.addContainers(o);
-                            }
+                if (available != null) {
+                    if (available.getItem().hasContainerItem(available.getDefinition())) {
+                        final ItemStack is2 = Platform.getContainerItem(available.createItemStack());
+                        final IAEItemStack o = AEItemStack.fromItemStack(is2);
+
+                        if (o != null) {
+                            this.parent.addContainers(o);
                         }
+                    }
 
-                        if (!this.exhausted) {
-                            final IAEItemStack is = this.job.checkUse(available);
+                    if (!this.exhausted) {
+                        final IAEItemStack is = this.job.checkUse(available);
 
-                            if (is != null) {
-                                thingsUsed.add(is.copy());
-                                this.used.add(is);
-                            }
+                        if (is != null) {
+                            thingsUsed.add(is.copy());
+                            this.used.add(is);
                         }
+                    }
 
-                        this.bytes += available.getStackSize();
-                        l -= available.getStackSize();
+                    this.bytes += available.getStackSize();
+                    l -= available.getStackSize();
 
-                        if (l == 0) {
-                            return available;
-                        }
+                    if (l == 0) {
+                        return available;
                     }
                 }
             }

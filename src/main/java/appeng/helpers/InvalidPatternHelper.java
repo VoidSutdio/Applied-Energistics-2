@@ -49,7 +49,7 @@ public class InvalidPatternHelper {
         final NBTTagList outTag = encodedValue.getTagList("out", 10);
         this.isCrafting = encodedValue.getBoolean("crafting");
 
-        this.canSubstitute = this.isCrafting && encodedValue.getBoolean("substitute");
+        this.canSubstitute = encodedValue.getBoolean("substitute");
 
         for (int i = 0; i < outTag.tagCount(); i++) {
             this.outputs.add(new PatternIngredient(outTag.getCompoundTagAt(i)));

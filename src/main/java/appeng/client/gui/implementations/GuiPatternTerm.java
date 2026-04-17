@@ -233,8 +233,13 @@ public class GuiPatternTerm extends GuiMEMonitorable implements IJEIGhostIngredi
         } else {
             this.tabCraftButton.visible = false;
             this.tabProcessButton.visible = true;
-            this.substitutionsEnabledBtn.visible = false;
-            this.substitutionsDisabledBtn.visible = false;
+            if (this.container.substitute) {
+                this.substitutionsEnabledBtn.visible = true;
+                this.substitutionsDisabledBtn.visible = false;
+            } else {
+                this.substitutionsEnabledBtn.visible = false;
+                this.substitutionsDisabledBtn.visible = true;
+            }
             this.x2Btn.visible = true;
             this.x3Btn.visible = true;
             this.divTwoBtn.visible = true;

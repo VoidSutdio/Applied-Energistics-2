@@ -127,15 +127,15 @@ public class GuiExpandedProcessingPatternTerm extends GuiMEMonitorable implement
         this.tabProcessButton = new GuiTabButton(this.guiLeft + 176, this.guiTop + this.ySize - 177, new ItemStack(Blocks.FURNACE), GuiText.ProcessingPattern.getLocal(), this.itemRender);
         this.buttonList.add(this.tabProcessButton);
 
-        this.substitutionsEnabledBtn = new GuiImgButton(this.guiLeft + 87, this.guiTop + this.ySize - 163, Settings.ACTIONS, ItemSubstitution.ENABLED);
+        this.substitutionsEnabledBtn = new GuiImgButton(this.guiLeft + 79, this.guiTop + this.ySize - 153, Settings.ACTIONS, ItemSubstitution.ENABLED);
         this.substitutionsEnabledBtn.setHalfSize(true);
         this.buttonList.add(this.substitutionsEnabledBtn);
 
-        this.substitutionsDisabledBtn = new GuiImgButton(this.guiLeft + 87, this.guiTop + this.ySize - 163, Settings.ACTIONS, ItemSubstitution.DISABLED);
+        this.substitutionsDisabledBtn = new GuiImgButton(this.guiLeft + 79, this.guiTop + this.ySize - 153, Settings.ACTIONS, ItemSubstitution.DISABLED);
         this.substitutionsDisabledBtn.setHalfSize(true);
         this.buttonList.add(this.substitutionsDisabledBtn);
 
-        this.clearBtn = new GuiImgButton(this.guiLeft + 78, this.guiTop + this.ySize - 163, Settings.ACTIONS, ActionItems.CLOSE);
+        this.clearBtn = new GuiImgButton(this.guiLeft + 79, this.guiTop + this.ySize - 163, Settings.ACTIONS, ActionItems.CLOSE);
         this.clearBtn.setHalfSize(true);
         this.buttonList.add(this.clearBtn);
 
@@ -175,8 +175,13 @@ public class GuiExpandedProcessingPatternTerm extends GuiMEMonitorable implement
     public void drawFG(final int offsetX, final int offsetY, final int mouseX, final int mouseY) {
         this.tabCraftButton.visible = false;
         this.tabProcessButton.visible = true;
-        this.substitutionsEnabledBtn.visible = false;
-        this.substitutionsDisabledBtn.visible = false;
+        if (((ContainerExpandedProcessingPatternTerm) this.inventorySlots).substitute) {
+            this.substitutionsEnabledBtn.visible = true;
+            this.substitutionsDisabledBtn.visible = false;
+        } else {
+            this.substitutionsEnabledBtn.visible = false;
+            this.substitutionsDisabledBtn.visible = true;
+        }
         this.x2Btn.visible = true;
         this.x3Btn.visible = true;
         this.divTwoBtn.visible = true;

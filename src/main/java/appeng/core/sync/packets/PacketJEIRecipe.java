@@ -32,9 +32,7 @@ import appeng.api.networking.storage.IStorageGrid;
 import appeng.api.storage.IMEMonitor;
 import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
-import appeng.container.implementations.ContainerExpandedProcessingPatternTerm;
 import appeng.container.implementations.ContainerPatternEncoder;
-import appeng.container.implementations.ContainerPatternTerm;
 import appeng.core.sync.AppEngPacket;
 import appeng.core.sync.network.INetworkInfo;
 import appeng.helpers.IContainerCraftingPacket;
@@ -252,6 +250,9 @@ public class PacketJEIRecipe extends AppEngPacket {
                     }
                 }
                 ItemHandlerUtil.setStackInSlot(craftMatrix, x, currentItem);
+                if (con instanceof ContainerPatternEncoder patternEncoder && !patternEncoder.isCraftingMode()) {
+                    patternEncoder.setProcessingSubstituteOptions(x, this.recipe.size() > x ? this.recipe.get(x) : null);
+                }
             }
 
             con.onCraftMatrixChanged(new WrapperInvItemHandler(craftMatrix));

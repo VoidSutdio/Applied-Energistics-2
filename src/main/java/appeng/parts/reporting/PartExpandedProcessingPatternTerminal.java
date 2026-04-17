@@ -8,6 +8,7 @@ import appeng.items.parts.PartModels;
 import appeng.parts.PartModel;
 import appeng.tile.inventory.AppEngInternalInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
 
 import javax.annotation.Nonnull;
@@ -43,6 +44,18 @@ public class PartExpandedProcessingPatternTerminal extends AbstractPartEncoder {
     @Override
     public void setCraftingRecipe(final boolean craftingMode) {
         // NO-OP
+    }
+
+    @Override
+    public void readFromNBT(final NBTTagCompound data) {
+        super.readFromNBT(data);
+        this.setSubstitution(data.getBoolean("substitute"));
+    }
+
+    @Override
+    public void writeToNBT(final NBTTagCompound data) {
+        super.writeToNBT(data);
+        data.setBoolean("substitute", this.substitute);
     }
 
     @Override

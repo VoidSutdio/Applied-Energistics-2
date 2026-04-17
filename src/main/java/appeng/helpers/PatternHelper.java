@@ -26,6 +26,7 @@ import appeng.api.storage.data.IAEItemStack;
 import appeng.container.ContainerNull;
 import appeng.util.Platform;
 import appeng.util.item.AEItemStack;
+import appeng.util.item.OreHelper;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import net.minecraft.inventory.InventoryCrafting;
@@ -64,6 +65,7 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
     private final IAEItemStack[] condensedOutputs;
     private final IAEItemStack[] inputs;
     private final IAEItemStack[] outputs;
+    private final List<String>[] explicitProcessingSubstituteOreNames;
     private final List<IAEItemStack>[] substituteInputs;
     private final Set<IAEItemStack>[] substituteInputSets;
     private final boolean isCrafting;
@@ -87,7 +89,7 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
         crafting = new InventoryCrafting(new ContainerNull(), isCrafting ? 3 : 4, isCrafting ? 3 : 4);
         testFrame = new InventoryCrafting(new ContainerNull(), isCrafting ? 3 : 4, isCrafting ? 3 : 4);
 
-        this.canSubstitute = this.isCrafting && encodedValue.getBoolean("substitute");
+        this.canSubstitute = encodedValue.getBoolean("substitute");
         this.patternItem = is;
         this.pattern = AEItemStack.fromItemStack(is);
 
@@ -142,8 +144,19 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
 
         this.inputs = in.toArray(new IAEItemStack[isCrafting ? CRAFTING_INPUT_LIMIT : PROCESSING_INPUT_LIMIT]);
         this.outputs = out.toArray(new IAEItemStack[outputLength]);
-        this.substituteInputs = new List[CRAFTING_INPUT_LIMIT];
-        this.substituteInputSets = new Set[CRAFTING_INPUT_LIMIT];
+        @SuppressWarnings("unchecked")
+        final List<IAEItemStack>[] substituteInputs = (List<IAEItemStack>[]) new List<?>[this.inputs.length];
+        @SuppressWarnings("unchecked")
+        final Set<IAEItemStack>[] substituteInputSets = (Set<IAEItemStack>[]) new Set<?>[this.inputs.length];
+        @SuppressWarnings("unchecked")
+        final List<String>[] explicitProcessingSubstituteOreNames = (List<String>[]) new List<?>[this.inputs.length];
+        this.substituteInputs = substituteInputs;
+        this.substituteInputSets = substituteInputSets;
+        this.explicitProcessingSubstituteOreNames = explicitProcessingSubstituteOreNames;
+
+        if (!this.isCrafting) {
+            this.readExplicitProcessingSubstitutes(encodedValue.getTagList("processingSubstitute", 10));
+        }
 
         final Map<IAEItemStack, IAEItemStack> tmpOutputs = new HashMap<>();
 
@@ -289,12 +302,14 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
 
     @Override
     public List<IAEItemStack> getSubstituteInputs(int slot) {
-        if (this.inputs[slot] == null) {
+        if (slot < 0 || slot >= this.inputs.length || slot >= this.substituteInputs.length) {
             return Collections.emptyList();
-        } else if (slot >= this.substituteInputs.length) {
+        } else if (this.inputs[slot] == null) {
             return Collections.emptyList();
         } else if (this.substituteInputs[slot] != null) {
             return this.substituteInputs[slot];
+        } else if (!this.isCrafting) {
+            return this.substituteInputs[slot] = this.getProcessingSubstituteInputs(slot);
         } else {
             ItemStack[] matchingStacks = this.getRecipeIngredient(slot).getMatchingStacks();
             List<IAEItemStack> result = new ObjectArrayList<>(matchingStacks.length + 1);
@@ -313,14 +328,87 @@ public class PatternHelper implements ICraftingPatternDetails, Comparable<Patter
 
     @Override
     public Set<IAEItemStack> getSubstituteInputsSet(int slot) {
-        if (this.inputs[slot] == null) {
+        if (slot < 0 || slot >= this.inputs.length || slot >= this.substituteInputSets.length) {
             return Collections.emptySet();
-        } else if (slot >= this.substituteInputSets.length) {
+        } else if (this.inputs[slot] == null) {
             return Collections.emptySet();
         } else if (this.substituteInputSets[slot] != null) {
             return this.substituteInputSets[slot];
         } else {
             return this.substituteInputSets[slot] = new ObjectOpenHashSet<>(getSubstituteInputs(slot));
+        }
+    }
+
+    private List<IAEItemStack> getProcessingSubstituteInputs(int slot) {
+        final Set<IAEItemStack> unique = new ObjectOpenHashSet<>();
+        final List<IAEItemStack> explicitSubstitutes = new ObjectArrayList<>();
+
+        final IAEItemStack input = this.inputs[slot];
+        if (input != null) {
+            explicitSubstitutes.add(input);
+            unique.add(input);
+        }
+
+        final List<String> oreNames = this.explicitProcessingSubstituteOreNames[slot];
+        if (oreNames != null && !oreNames.isEmpty()) {
+            for (String oreName : oreNames) {
+                for (ItemStack oreStack : OreHelper.INSTANCE.getCachedOres(oreName)) {
+                    final IAEItemStack candidate = AEItemStack.fromItemStack(oreStack);
+                    if (candidate != null && unique.add(candidate)) {
+                        explicitSubstitutes.add(candidate);
+                    }
+                }
+            }
+        }
+
+        if (!explicitSubstitutes.isEmpty()) {
+            return explicitSubstitutes;
+        }
+
+        return Collections.emptyList();
+    }
+
+    private void readExplicitProcessingSubstitutes(final NBTTagList substituteTag) {
+        for (int i = 0; i < substituteTag.tagCount(); i++) {
+            final NBTTagCompound slotTag = substituteTag.getCompoundTagAt(i);
+            final int slot = slotTag.getInteger("slot");
+            if (slot < 0 || slot >= this.explicitProcessingSubstituteOreNames.length || this.inputs[slot] == null) {
+                continue;
+            }
+
+            final NBTTagList oreNamesTag = slotTag.getTagList("oreNames", 8);
+            if (oreNamesTag.tagCount() > 0) {
+                final List<String> decodedOreNames = new ObjectArrayList<>(oreNamesTag.tagCount());
+                for (int j = 0; j < oreNamesTag.tagCount(); j++) {
+                    final String oreName = oreNamesTag.getStringTagAt(j);
+                    if (!oreName.isEmpty()) {
+                        decodedOreNames.add(oreName);
+                    }
+                }
+                if (!decodedOreNames.isEmpty()) {
+                    this.explicitProcessingSubstituteOreNames[slot] = decodedOreNames;
+                }
+                continue;
+            }
+
+            // Backward-compatibility for already-encoded patterns that used full stack options.
+            final NBTTagList options = slotTag.getTagList("options", 10);
+            if (options.tagCount() <= 0) {
+                continue;
+            }
+            final Set<String> inferredOreNames = new LinkedHashSet<>();
+            for (int j = 0; j < options.tagCount(); j++) {
+                final ItemStack stack = stackFromNBT(options.getCompoundTagAt(j));
+                if (stack.isEmpty()) {
+                    continue;
+                }
+                for (int oreId : net.minecraftforge.oredict.OreDictionary.getOreIDs(stack)) {
+                    inferredOreNames.add(net.minecraftforge.oredict.OreDictionary.getOreName(oreId));
+                }
+            }
+            if (!inferredOreNames.isEmpty()) {
+                this.explicitProcessingSubstituteOreNames[slot] = new ObjectArrayList<>(inferredOreNames);
+            }
         }
     }
 
