@@ -20,14 +20,17 @@ package appeng.client.gui.implementations;
 
 
 import appeng.api.AEApi;
+import appeng.api.config.Settings;
 import appeng.api.config.SortDir;
 import appeng.api.config.SortOrder;
+import appeng.api.config.TerminalStyle;
 import appeng.api.config.ViewItems;
 import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.api.util.AEColor;
 import appeng.client.gui.AEBaseGui;
+import appeng.client.gui.widgets.GuiImgButton;
 import appeng.client.gui.widgets.GuiScrollbar;
 import appeng.client.gui.widgets.ISortSource;
 import appeng.client.gui.widgets.MEGuiTextField;
@@ -45,8 +48,9 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
 import org.apache.commons.lang3.time.DurationFormatUtils;
-import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
 
+import java.awt.*;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -55,10 +59,16 @@ import java.util.concurrent.TimeUnit;
 
 
 public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
-    private static final int GUI_HEIGHT = 184;
+    private static final int GUI_TOP_HEIGHT = 19;
+    private static final int GUI_ROW_HEIGHT = 23;
+    private static final int GUI_BOTTOM_HEIGHT = 27;
+    protected static final int DEFAULT_DISPLAYED_ROWS = 6;
+    private static final int GUI_HEIGHT = GUI_TOP_HEIGHT + DEFAULT_DISPLAYED_ROWS * GUI_ROW_HEIGHT + GUI_BOTTOM_HEIGHT;
     private static final int GUI_WIDTH = 238;
-
-    private static final int DISPLAYED_ROWS = 6;
+    private static final int BOTTOM_TEXTURE_Y = GUI_TOP_HEIGHT + DEFAULT_DISPLAYED_ROWS * GUI_ROW_HEIGHT;
+    private static final int RESERVED_TOP_SPACE = 18;
+    private static final int RESERVED_BOTTOM_SPACE = 18;
+    private static final int TERMINAL_STYLE_BOTTOM_OFFSET = 18;
 
     private static final int TEXT_COLOR = 0x404040;
     private static final int BACKGROUND_ALPHA = 0x5A000000;
@@ -67,7 +77,6 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
 
     private static final int SCROLLBAR_TOP = 19;
     private static final int SCROLLBAR_LEFT = 218;
-    private static final int SCROLLBAR_HEIGHT = 137;
 
     private static final int CANCEL_LEFT_OFFSET = 163;
     private static final int CANCEL_TOP_OFFSET = 25;
@@ -89,8 +98,10 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
     private List<IAEItemStack> visual = new ArrayList<>();
     private final List<IAEItemStack> filteredVisual = new ArrayList<>();
     private GuiButton cancel;
+    private GuiImgButton terminalStyleBox;
     private MEGuiTextField searchField;
     private int tooltip = -1;
+    private int displayedRows = DEFAULT_DISPLAYED_ROWS;
 
     public GuiCraftingCPU(final InventoryPlayer inventoryPlayer, final Object te) {
         this(new ContainerCraftingCPU(inventoryPlayer, te));
@@ -119,6 +130,16 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
     protected void actionPerformed(final GuiButton btn) throws IOException {
         super.actionPerformed(btn);
 
+        if (btn == this.terminalStyleBox) {
+            final boolean backwards = Mouse.isButtonDown(1);
+            final Enum<?> cv = this.terminalStyleBox.getCurrentValue();
+            final Enum<?> next = Platform.rotateEnum(cv, backwards, this.terminalStyleBox.getSetting().getPossibleValues());
+            AEConfig.instance().getConfigManager().putSetting(this.terminalStyleBox.getSetting(), next);
+            this.terminalStyleBox.set(next);
+            this.reinitalize();
+            return;
+        }
+
         if (this.cancel == btn) {
             try {
                 NetworkHandler.instance().sendToServer(new PacketValueConfig("TileCrafting.Cancel", "Cancel"));
@@ -130,7 +151,15 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
 
     @Override
     public void initGui() {
+        this.displayedRows = this.calculateDisplayedRows();
+        this.ySize = GUI_TOP_HEIGHT + this.displayedRows * GUI_ROW_HEIGHT + GUI_BOTTOM_HEIGHT;
         super.initGui();
+
+        this.terminalStyleBox = new GuiImgButton(this.guiLeft - 18, this.getTerminalStyleButtonY(), Settings.TERMINAL_STYLE, AEConfig.instance()
+                .getConfigManager()
+                .getSetting(Settings.TERMINAL_STYLE));
+        this.buttonList.add(this.terminalStyleBox);
+
         this.cancel = new GuiButton(0, this.guiLeft + CANCEL_LEFT_OFFSET, this.guiTop + this.ySize - CANCEL_TOP_OFFSET, CANCEL_WIDTH, CANCEL_HEIGHT, GuiText.Cancel
                 .getLocal());
         this.buttonList.add(this.cancel);
@@ -152,15 +181,39 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
         this.setScrollBar();
     }
 
+    private int calculateDisplayedRows() {
+        final int maxRows = this.getMaxRows();
+        final int jeiTopReserve = Platform.isModLoaded("jei") ? 24 : 0;
+        final int availableRows = Math.max(1, (this.height - GUI_TOP_HEIGHT - GUI_BOTTOM_HEIGHT - RESERVED_TOP_SPACE - RESERVED_BOTTOM_SPACE - jeiTopReserve) / GUI_ROW_HEIGHT);
+        return Math.min(maxRows, availableRows);
+    }
+
+    private int getMaxRows() {
+        return AEConfig.instance().getConfigManager().getSetting(Settings.TERMINAL_STYLE) == TerminalStyle.SMALL ? DEFAULT_DISPLAYED_ROWS : Integer.MAX_VALUE;
+    }
+
+    private int getTerminalStyleButtonY() {
+        return this.guiTop + this.ySize - TERMINAL_STYLE_BOTTOM_OFFSET;
+    }
+
+    protected void reinitalize() {
+        this.buttonList.clear();
+        this.initGui();
+    }
+
     private void setScrollBar() {
         final int size = this.filteredVisual.size();
 
-        this.getScrollBar().setTop(SCROLLBAR_TOP).setLeft(SCROLLBAR_LEFT).setHeight(SCROLLBAR_HEIGHT);
-        this.getScrollBar().setRange(0, (size + 2) / 3 - DISPLAYED_ROWS, 1);
+        this.getScrollBar().setTop(SCROLLBAR_TOP).setLeft(SCROLLBAR_LEFT).setHeight(this.displayedRows * GUI_ROW_HEIGHT - 2);
+        this.getScrollBar().setRange(0, (size + 2) / 3 - this.displayedRows, 1);
     }
 
     @Override
     public void drawScreen(final int mouseX, final int mouseY, final float btn) {
+        if (this.terminalStyleBox != null) {
+            this.terminalStyleBox.set(AEConfig.instance().getConfigManager().getSetting(Settings.TERMINAL_STYLE));
+        }
+
         this.cancel.enabled = !this.visual.isEmpty();
 
         final int gx = (this.width - this.xSize) / 2;
@@ -168,10 +221,10 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
 
         this.tooltip = -1;
 
-        final int offY = 23;
+        final int offY = GUI_ROW_HEIGHT;
         int y = 0;
         int x = 0;
-        for (int z = 0; z <= 4 * 5; z++) {
+        for (int z = 0; z < this.displayedRows * 3; z++) {
             final int minX = gx + 9 + x * 67;
             final int minY = gy + 22 + y * offY;
 
@@ -208,14 +261,14 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
         int x = 0;
         int y = 0;
         final int viewStart = this.getScrollBar().getCurrentScroll() * 3;
-        final int viewEnd = viewStart + 3 * 6;
+        final int viewEnd = viewStart + 3 * this.displayedRows;
 
         String dspToolTip = "";
         final List<String> lineList = new ArrayList<>();
         int toolPosX = 0;
         int toolPosY = 0;
 
-        final int offY = 23;
+        final int offY = GUI_ROW_HEIGHT;
 
         final ReadableNumberConverter converter = ReadableNumberConverter.INSTANCE;
         for (int z = viewStart; z < Math.min(viewEnd, this.filteredVisual.size()); z++) {
@@ -328,8 +381,17 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
 
     @Override
     public void drawBG(final int offsetX, final int offsetY, final int mouseX, final int mouseY) {
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         this.bindTexture("guis/craftingcpu.png");
-        this.drawTexturedModalRect(offsetX, offsetY, 0, 0, this.xSize, this.ySize);
+        if (this.displayedRows == DEFAULT_DISPLAYED_ROWS) {
+            this.drawTexturedModalRect(offsetX, offsetY, 0, 0, this.xSize, GUI_HEIGHT);
+        } else {
+            this.drawTexturedModalRect(offsetX, offsetY, 0, 0, this.xSize, GUI_TOP_HEIGHT);
+            for (int row = 0; row < this.displayedRows; row++) {
+                this.drawTexturedModalRect(offsetX, offsetY + GUI_TOP_HEIGHT + row * GUI_ROW_HEIGHT, 0, GUI_TOP_HEIGHT, this.xSize, GUI_ROW_HEIGHT);
+            }
+            this.drawTexturedModalRect(offsetX, offsetY + GUI_TOP_HEIGHT + this.displayedRows * GUI_ROW_HEIGHT, 0, BOTTOM_TEXTURE_Y, this.xSize, GUI_BOTTOM_HEIGHT);
+        }
         final int searchX = this.guiLeft + this.xSize - 101;
         final int searchY = this.guiTop + 5;
         this.bindTexture("guis/searchfield.png");
@@ -504,6 +566,11 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
     }
 
     public int getDisplayedRows() {
-        return DISPLAYED_ROWS;
+        return this.displayedRows;
+    }
+
+    @Override
+    public List<Rectangle> getJEIExclusionArea() {
+        return super.getJEIExclusionArea();
     }
 }

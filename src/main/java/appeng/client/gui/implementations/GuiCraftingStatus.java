@@ -26,7 +26,6 @@ package appeng.client.gui.implementations;
 import appeng.api.AEApi;
 import appeng.api.definitions.IDefinitions;
 import appeng.api.definitions.IParts;
-import appeng.api.features.IWirelessTermHandler;
 import appeng.api.storage.ITerminalHost;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.client.gui.widgets.GuiScrollbar;
@@ -34,7 +33,6 @@ import appeng.client.gui.widgets.GuiTabButton;
 import appeng.container.implementations.ContainerCraftingStatus;
 import appeng.container.implementations.CraftingCPUStatus;
 import appeng.core.AELog;
-import appeng.core.features.registries.WirelessRegistry;
 import appeng.core.localization.GuiText;
 import appeng.core.sync.GuiBridge;
 import appeng.core.sync.network.NetworkHandler;
@@ -48,6 +46,7 @@ import appeng.parts.reporting.PartTerminal;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiButton;
+import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
 import org.lwjgl.input.Mouse;
@@ -62,11 +61,13 @@ import java.util.List;
 public class GuiCraftingStatus extends GuiCraftingCPU {
 
     private static final int CPU_TABLE_WIDTH = 94;
-    private static final int CPU_TABLE_HEIGHT = 164;
+    private static final int CPU_TABLE_TOP_HEIGHT = 19;
+    private static final int CPU_TABLE_BOTTOM_HEIGHT = 7;
     private static final int CPU_TABLE_SLOT_XOFF = 100;
     private static final int CPU_TABLE_SLOT_YOFF = 0;
     private static final int CPU_TABLE_SLOT_WIDTH = 67;
     private static final int CPU_TABLE_SLOT_HEIGHT = 23;
+    private static final int CPU_TABLE_BOTTOM_TEXTURE_Y = CPU_TABLE_TOP_HEIGHT + 6 * CPU_TABLE_SLOT_HEIGHT;
 
     private final ContainerCraftingStatus status;
     private GuiButton selectCPU;
@@ -118,8 +119,6 @@ public class GuiCraftingStatus extends GuiCraftingCPU {
     protected void actionPerformed(final GuiButton btn) throws IOException {
         super.actionPerformed(btn);
 
-        final boolean backwards = Mouse.isButtonDown(1);
-
         if (btn == this.originalGuiBtn) {
             NetworkHandler.instance().sendToServer(new PacketSwitchGuis(this.originalGui));
         }
@@ -138,7 +137,7 @@ public class GuiCraftingStatus extends GuiCraftingCPU {
         this.cpuScrollbar.setLeft(-16);
         this.cpuScrollbar.setTop(19);
         this.cpuScrollbar.setWidth(12);
-        this.cpuScrollbar.setHeight(137);
+        this.cpuScrollbar.setHeight(this.getDisplayedRows() * CPU_TABLE_SLOT_HEIGHT - 2);
 
         if (!this.myIcon.isEmpty()) {
             this.buttonList.add(
@@ -151,7 +150,7 @@ public class GuiCraftingStatus extends GuiCraftingCPU {
     public void drawScreen(final int mouseX, final int mouseY, final float btn) {
         List<CraftingCPUStatus> cpus = this.status.getCPUs();
         this.selectedCPUName = null;
-        this.cpuScrollbar.setRange(0, Integer.max(0, cpus.size() - 6), 1);
+        this.cpuScrollbar.setRange(0, Integer.max(0, cpus.size() - this.getDisplayedRows()), 1);
         for (CraftingCPUStatus cpu : cpus) {
             if (cpu.getSerial() == this.status.selectedCpuSerial) {
                 this.selectedCPUName = cpu.getName();
@@ -169,7 +168,7 @@ public class GuiCraftingStatus extends GuiCraftingCPU {
         {
             FontRenderer font = Minecraft.getMinecraft().fontRenderer;
             final int TEXT_COLOR = 0x202020;
-            for (int i = firstCpu; i < firstCpu + 6; i++) {
+            for (int i = firstCpu; i < firstCpu + this.getDisplayedRows(); i++) {
                 if (i < 0 || i >= cpus.size()) {
                     continue;
                 }
@@ -293,14 +292,25 @@ public class GuiCraftingStatus extends GuiCraftingCPU {
     @Override
     public void drawBG(int offsetX, int offsetY, int mouseX, int mouseY) {
         super.drawBG(offsetX, offsetY, mouseX, mouseY);
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         this.bindTexture("guis/cpu_selector.png");
-        this.drawTexturedModalRect(offsetX - CPU_TABLE_WIDTH, offsetY, 0, 0, CPU_TABLE_WIDTH, CPU_TABLE_HEIGHT);
+        if (this.getDisplayedRows() == DEFAULT_DISPLAYED_ROWS) {
+            this.drawTexturedModalRect(offsetX - CPU_TABLE_WIDTH, offsetY, 0, 0, CPU_TABLE_WIDTH, this.getCpuTableHeight());
+        } else {
+            this.drawTexturedModalRect(offsetX - CPU_TABLE_WIDTH, offsetY, 0, 0, CPU_TABLE_WIDTH, CPU_TABLE_TOP_HEIGHT);
+            for (int row = 0; row < this.getDisplayedRows(); row++) {
+                this.drawTexturedModalRect(offsetX - CPU_TABLE_WIDTH, offsetY + CPU_TABLE_TOP_HEIGHT + row * CPU_TABLE_SLOT_HEIGHT, 0, CPU_TABLE_TOP_HEIGHT,
+                        CPU_TABLE_WIDTH, CPU_TABLE_SLOT_HEIGHT);
+            }
+            this.drawTexturedModalRect(offsetX - CPU_TABLE_WIDTH, offsetY + CPU_TABLE_TOP_HEIGHT + this.getDisplayedRows() * CPU_TABLE_SLOT_HEIGHT, 0,
+                    CPU_TABLE_BOTTOM_TEXTURE_Y, CPU_TABLE_WIDTH, CPU_TABLE_BOTTOM_HEIGHT);
+        }
     }
 
     @Override
     public List<Rectangle> getJEIExclusionArea() {
-        Rectangle craftingCPUArea = new Rectangle(this.guiLeft - CPU_TABLE_WIDTH, this.guiTop, CPU_TABLE_WIDTH, CPU_TABLE_HEIGHT);
-        List<Rectangle> area = new ArrayList<Rectangle>();
+        Rectangle craftingCPUArea = new Rectangle(this.guiLeft - CPU_TABLE_WIDTH, this.guiTop, CPU_TABLE_WIDTH, this.getCpuTableHeight());
+        List<Rectangle> area = new ArrayList<>();
         area.add(craftingCPUArea);
         return area;
     }
@@ -337,7 +347,7 @@ public class GuiCraftingStatus extends GuiCraftingCPU {
         x -= guiLeft - CPU_TABLE_WIDTH;
         y -= guiTop;
         int dwheel = Mouse.getEventDWheel();
-        if (x >= 9 && x < CPU_TABLE_SLOT_WIDTH + 9 && y >= 19 && y < 19 + 6 * CPU_TABLE_SLOT_HEIGHT) {
+        if (x >= 9 && x < CPU_TABLE_SLOT_WIDTH + 9 && y >= 19 && y < 19 + this.getDisplayedRows() * CPU_TABLE_SLOT_HEIGHT) {
             if (this.cpuScrollbar != null && dwheel != 0) {
                 this.cpuScrollbar.wheel(dwheel);
                 return;
@@ -349,13 +359,17 @@ public class GuiCraftingStatus extends GuiCraftingCPU {
     private CraftingCPUStatus hitCpu(int x, int y) {
         x -= guiLeft - CPU_TABLE_WIDTH;
         y -= guiTop;
-        if (!(x >= 9 && x < CPU_TABLE_SLOT_WIDTH + 9 && y >= 19 && y < 19 + 6 * CPU_TABLE_SLOT_HEIGHT)) {
+        if (!(x >= 9 && x < CPU_TABLE_SLOT_WIDTH + 9 && y >= 19 && y < 19 + this.getDisplayedRows() * CPU_TABLE_SLOT_HEIGHT)) {
             return null;
         }
         int scrollOffset = this.cpuScrollbar != null ? this.cpuScrollbar.getCurrentScroll() : 0;
         int cpuId = scrollOffset + (y - 19) / CPU_TABLE_SLOT_HEIGHT;
         List<CraftingCPUStatus> cpus = this.status.getCPUs();
         return (cpuId >= 0 && cpuId < cpus.size()) ? cpus.get(cpuId) : null;
+    }
+
+    private int getCpuTableHeight() {
+        return CPU_TABLE_TOP_HEIGHT + this.getDisplayedRows() * CPU_TABLE_SLOT_HEIGHT + CPU_TABLE_BOTTOM_HEIGHT;
     }
 
     private void updateCPUButtonText() {
