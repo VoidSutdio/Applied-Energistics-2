@@ -206,6 +206,7 @@ public class MEGuiTextField extends GuiTextField {
         tessellator.draw();
         GlStateManager.disableColorLogic();
         GlStateManager.enableTexture2D();
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
 }

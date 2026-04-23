@@ -20,13 +20,13 @@ package appeng.client.gui.implementations;
 
 
 import appeng.api.AEApi;
-import appeng.api.features.IWirelessTermHandler;
 import appeng.api.storage.ITerminalHost;
 import appeng.api.storage.channels.IItemStorageChannel;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IItemList;
 import appeng.client.gui.AEBaseGui;
 import appeng.client.gui.widgets.GuiScrollbar;
+import appeng.client.gui.widgets.MEGuiTextField;
 import appeng.container.implementations.ContainerCraftConfirm;
 import appeng.core.AELog;
 import appeng.core.localization.GuiText;
@@ -66,11 +66,13 @@ public class GuiCraftConfirm extends AEBaseGui {
     private final IItemList<IAEItemStack> missing = AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class).createList();
 
     private final List<IAEItemStack> visual = new ArrayList<>();
+    private final List<IAEItemStack> filteredVisual = new ArrayList<>();
 
     private GuiBridge OriginalGui;
     private GuiButton cancel;
     private GuiButton start;
     private GuiButton selectCPU;
+    private MEGuiTextField searchField;
     private int tooltip = -1;
 
     public GuiCraftConfirm(final InventoryPlayer inventoryPlayer, final ITerminalHost te) {
@@ -128,6 +130,22 @@ public class GuiCraftConfirm extends AEBaseGui {
         }
 
         this.buttonList.add(this.cancel);
+
+        this.searchField = new MEGuiTextField(this.fontRenderer, this.guiLeft + this.xSize - 101, this.guiTop + 5, 75, 11) {
+            @Override
+            public void onTextChange(final String oldText) {
+                super.onTextChange(oldText);
+                updateFilteredList();
+                setScrollBar();
+            }
+        };
+        this.searchField.setEnableBackgroundDrawing(false);
+        this.searchField.setMaxStringLength(25);
+        this.searchField.setTextColor(0xFFFFFF);
+        this.searchField.setVisible(true);
+
+        updateFilteredList();
+        this.setScrollBar();
     }
 
     @Override
@@ -186,6 +204,27 @@ public class GuiCraftConfirm extends AEBaseGui {
         this.selectCPU.displayString = btnTextText;
     }
 
+    private void updateFilteredList() {
+        this.filteredVisual.clear();
+
+        if (this.searchField == null) {
+            this.filteredVisual.addAll(this.visual);
+            return;
+        }
+
+        final String searchText = this.searchField.getText().toLowerCase();
+        if (searchText.isEmpty()) {
+            this.filteredVisual.addAll(this.visual);
+            return;
+        }
+
+        for (final IAEItemStack stack : this.visual) {
+            if (stack != null && Platform.getItemDisplayName(stack).toLowerCase().contains(searchText)) {
+                this.filteredVisual.add(stack);
+            }
+        }
+    }
+
     private boolean isSimulation() {
         return ((ContainerCraftConfirm) this.inventorySlots).isSimulation();
     }
@@ -225,8 +264,8 @@ public class GuiCraftConfirm extends AEBaseGui {
 
         final int offY = 23;
 
-        for (int z = viewStart; z < Math.min(viewEnd, this.visual.size()); z++) {
-            final IAEItemStack refStack = this.visual.get(z);// repo.getReferenceItem( z );
+        for (int z = viewStart; z < Math.min(viewEnd, this.filteredVisual.size()); z++) {
+            final IAEItemStack refStack = this.filteredVisual.get(z);// repo.getReferenceItem( z );
             if (refStack != null) {
                 GlStateManager.pushMatrix();
                 GlStateManager.scale(0.5, 0.5, 0.5);
@@ -357,10 +396,15 @@ public class GuiCraftConfirm extends AEBaseGui {
         this.setScrollBar();
         this.bindTexture("guis/craftingreport.png");
         this.drawTexturedModalRect(offsetX, offsetY, 0, 0, this.xSize, this.ySize);
+        final int searchX = this.guiLeft + this.xSize - 101;
+        final int searchY = this.guiTop + 5;
+        this.bindTexture("guis/searchfield.png");
+        this.drawTexturedModalRect(searchX, searchY, 0, 0, 75, 11);
+        this.searchField.drawTextBox();
     }
 
     private void setScrollBar() {
-        final int size = this.visual.size();
+        final int size = this.filteredVisual.size();
 
         this.getScrollBar().setTop(19).setLeft(218).setHeight(114);
         this.getScrollBar().setRange(0, (size + 2) / 3 - this.rows, 1);
@@ -398,6 +442,7 @@ public class GuiCraftConfirm extends AEBaseGui {
             }
         }
 
+        updateFilteredList();
         this.setScrollBar();
     }
 
@@ -468,11 +513,29 @@ public class GuiCraftConfirm extends AEBaseGui {
     @Override
     protected void keyTyped(final char character, final int key) throws IOException {
         if (!this.checkHotbarKeys(key)) {
+            if (this.searchField.textboxKeyTyped(character, key)) {
+                this.setScrollBar();
+                return;
+            }
+
             if (key == Keyboard.KEY_RETURN || key == Keyboard.KEY_NUMPADENTER) {
                 this.actionPerformed(this.start);
             }
             super.keyTyped(character, key);
         }
+    }
+
+    @Override
+    protected void mouseClicked(final int xCoord, final int yCoord, final int btn) throws IOException {
+        this.searchField.mouseClicked(xCoord, yCoord, btn);
+
+        if (btn == 1 && this.searchField.isMouseIn(xCoord, yCoord)) {
+            this.searchField.setText("");
+            updateFilteredList();
+            this.setScrollBar();
+        }
+
+        super.mouseClicked(xCoord, yCoord, btn);
     }
 
     @Override

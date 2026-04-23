@@ -30,6 +30,7 @@ import appeng.api.util.AEColor;
 import appeng.client.gui.AEBaseGui;
 import appeng.client.gui.widgets.GuiScrollbar;
 import appeng.client.gui.widgets.ISortSource;
+import appeng.client.gui.widgets.MEGuiTextField;
 import appeng.container.implementations.ContainerCraftingCPU;
 import appeng.core.AEConfig;
 import appeng.core.AELog;
@@ -44,6 +45,7 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
 import org.apache.commons.lang3.time.DurationFormatUtils;
+import org.lwjgl.input.Keyboard;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -85,7 +87,9 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
     private IItemList<IAEItemStack> pending = AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class).createList();
 
     private List<IAEItemStack> visual = new ArrayList<>();
+    private final List<IAEItemStack> filteredVisual = new ArrayList<>();
     private GuiButton cancel;
+    private MEGuiTextField searchField;
     private int tooltip = -1;
 
     public GuiCraftingCPU(final InventoryPlayer inventoryPlayer, final Object te) {
@@ -108,6 +112,7 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
         this.active = AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class).createList();
         this.pending = AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class).createList();
         this.visual = new ArrayList<>();
+        this.filteredVisual.clear();
     }
 
     @Override
@@ -126,14 +131,29 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
     @Override
     public void initGui() {
         super.initGui();
-        this.setScrollBar();
         this.cancel = new GuiButton(0, this.guiLeft + CANCEL_LEFT_OFFSET, this.guiTop + this.ySize - CANCEL_TOP_OFFSET, CANCEL_WIDTH, CANCEL_HEIGHT, GuiText.Cancel
                 .getLocal());
         this.buttonList.add(this.cancel);
+
+        this.searchField = new MEGuiTextField(this.fontRenderer, this.guiLeft + this.xSize - 101, this.guiTop + 5, 75, 11) {
+            @Override
+            public void onTextChange(final String oldText) {
+                super.onTextChange(oldText);
+                updateFilteredList();
+                setScrollBar();
+            }
+        };
+        this.searchField.setEnableBackgroundDrawing(false);
+        this.searchField.setMaxStringLength(25);
+        this.searchField.setTextColor(0xFFFFFF);
+        this.searchField.setVisible(true);
+
+        updateFilteredList();
+        this.setScrollBar();
     }
 
     private void setScrollBar() {
-        final int size = this.visual.size();
+        final int size = this.filteredVisual.size();
 
         this.getScrollBar().setTop(SCROLLBAR_TOP).setLeft(SCROLLBAR_LEFT).setHeight(SCROLLBAR_HEIGHT);
         this.getScrollBar().setRange(0, (size + 2) / 3 - DISPLAYED_ROWS, 1);
@@ -198,8 +218,8 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
         final int offY = 23;
 
         final ReadableNumberConverter converter = ReadableNumberConverter.INSTANCE;
-        for (int z = viewStart; z < Math.min(viewEnd, this.visual.size()); z++) {
-            final IAEItemStack refStack = this.visual.get(z);// repo.getReferenceItem( z );
+        for (int z = viewStart; z < Math.min(viewEnd, this.filteredVisual.size()); z++) {
+            final IAEItemStack refStack = this.filteredVisual.get(z);// repo.getReferenceItem( z );
             if (refStack != null) {
                 GlStateManager.pushMatrix();
                 GlStateManager.scale(0.5, 0.5, 0.5);
@@ -310,6 +330,11 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
     public void drawBG(final int offsetX, final int offsetY, final int mouseX, final int mouseY) {
         this.bindTexture("guis/craftingcpu.png");
         this.drawTexturedModalRect(offsetX, offsetY, 0, 0, this.xSize, this.ySize);
+        final int searchX = this.guiLeft + this.xSize - 101;
+        final int searchY = this.guiTop + 5;
+        this.bindTexture("guis/searchfield.png");
+        this.drawTexturedModalRect(searchX, searchY, 0, 0, 75, 11);
+        this.searchField.drawTextBox();
     }
 
     public void postUpdate(final List<IAEItemStack> list, final byte ref) {
@@ -344,7 +369,29 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
             }
         }
 
+        updateFilteredList();
         this.setScrollBar();
+    }
+
+    private void updateFilteredList() {
+        this.filteredVisual.clear();
+
+        if (this.searchField == null) {
+            this.filteredVisual.addAll(this.visual);
+            return;
+        }
+
+        final String searchText = this.searchField.getText().toLowerCase();
+        if (searchText.isEmpty()) {
+            this.filteredVisual.addAll(this.visual);
+            return;
+        }
+
+        for (final IAEItemStack stack : this.visual) {
+            if (stack != null && Platform.getItemDisplayName(stack).toLowerCase().contains(searchText)) {
+                this.filteredVisual.add(stack);
+            }
+        }
     }
 
     private void handleInput(final IItemList<IAEItemStack> s, final IAEItemStack l) {
@@ -411,6 +458,30 @@ public class GuiCraftingCPU extends AEBaseGui implements ISortSource {
         this.visual.add(stack);
 
         return stack;
+    }
+
+    @Override
+    protected void keyTyped(final char character, final int key) throws IOException {
+        if (!this.checkHotbarKeys(key)) {
+            if (this.searchField.textboxKeyTyped(character, key)) {
+                this.setScrollBar();
+                return;
+            }
+            super.keyTyped(character, key);
+        }
+    }
+
+    @Override
+    protected void mouseClicked(final int xCoord, final int yCoord, final int btn) throws IOException {
+        this.searchField.mouseClicked(xCoord, yCoord, btn);
+
+        if (btn == 1 && this.searchField.isMouseIn(xCoord, yCoord)) {
+            this.searchField.setText("");
+            updateFilteredList();
+            this.setScrollBar();
+        }
+
+        super.mouseClicked(xCoord, yCoord, btn);
     }
 
     @Override
