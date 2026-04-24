@@ -52,7 +52,7 @@ public class AEGuiHandler implements IAdvancedGuiHandler<AEBaseGui>, IGhostIngre
         Object result = null;
         if (guiContainer instanceof GuiCraftConfirm) {
             guiSlotIdx = getSlotidx(guiContainer, mouseX, mouseY, ((GuiCraftConfirm) guiContainer).getDisplayedRows());
-            visual = ((GuiCraftConfirm) guiContainer).getVisual();
+            visual = ((GuiCraftConfirm) guiContainer).getFilteredVisual();
             if (guiSlotIdx < visual.size() && guiSlotIdx != -1) {
                 result = visual.get(guiSlotIdx).getDefinition();
             } else {
@@ -62,7 +62,7 @@ public class AEGuiHandler implements IAdvancedGuiHandler<AEBaseGui>, IGhostIngre
 
         if (guiContainer instanceof GuiCraftingCPU) {
             guiSlotIdx = getSlotidx(guiContainer, mouseX, mouseY, ((GuiCraftingCPU) guiContainer).getDisplayedRows());
-            visual = ((GuiCraftingCPU) guiContainer).getVisual();
+            visual = ((GuiCraftingCPU) guiContainer).getFilteredVisual();
             if (guiSlotIdx < visual.size() && guiSlotIdx != -1) {
                 result = visual.get(guiSlotIdx).getDefinition();
             } else {

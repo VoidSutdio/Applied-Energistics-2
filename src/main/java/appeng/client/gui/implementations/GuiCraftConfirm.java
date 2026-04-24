@@ -632,6 +632,10 @@ public class GuiCraftConfirm extends AEBaseGui {
         return visual;
     }
 
+    public List<IAEItemStack> getFilteredVisual() {
+        return this.filteredVisual;
+    }
+
     public int getDisplayedRows() {
         return this.rows;
     }
