@@ -104,9 +104,14 @@ public abstract class ContainerPatternEncoder extends ContainerMEMonitorable imp
             final AppEngSlot clickSlot = (AppEngSlot) this.inventorySlots.get(idx); // require AE SLots!
             ItemStack itemStack = clickSlot.getStack();
             if (AEApi.instance().definitions().materials().blankPattern().isSameAs(itemStack)) {
-                IItemHandler patternInv = this.getPart().getInventoryByName("pattern");
-                ItemStack remainder = patternInv.insertItem(0, itemStack, false);
-                clickSlot.putStack(remainder);
+                final AbstractPartEncoder part = this.getPart();
+                if (part != null) {
+                    final IItemHandler patternInv = part.getInventoryByName("pattern");
+                    if (patternInv != null) {
+                        final ItemStack remainder = patternInv.insertItem(0, itemStack, false);
+                        clickSlot.putStack(remainder);
+                    }
+                }
             }
         }
         return super.transferStackInSlot(p, idx);
